@@ -30,7 +30,7 @@ Context Bridge runs locally, reads your data sources, and exposes them to any MC
 ### From PyPI (recommended)
 
 ```bash
-pip install context-bridge
+pip install mcp-context-bridge
 ```
 
 ### From Source
