@@ -82,11 +82,14 @@ async def test_github_search_code_real() -> None:
     await conn.shutdown()
 
 
-@pytest.mark.skipif(_should_skip_github(), reason="SKIP_REAL_GITHUB set")
+@pytest.mark.skipif(
+    _should_skip_github() or not os.environ.get("GITHUB_TOKEN"),
+    reason="SKIP_REAL_GITHUB set or no GITHUB_TOKEN (caching test makes 2 API calls)",
+)
 @pytest.mark.asyncio
 async def test_github_caching_real() -> None:
     """Verify that repeated calls hit the cache."""
-    cfg = GitHubConfig(token="", repos=[])
+    cfg = GitHubConfig(token=os.environ.get("GITHUB_TOKEN", ""), repos=[])
     conn = GitHubConnector(cfg)
     await conn.initialize()
 
