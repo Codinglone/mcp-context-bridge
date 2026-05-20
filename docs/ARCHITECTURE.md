@@ -25,10 +25,10 @@
 │  │ Connector   │  │  Connector  │  │  Connector  │               │
 │  └─────────────┘  └─────────────┘  └─────────────┘               │
 │                                                                   │
-│  ┌─────────────┐                                                  │
-│  │  Obsidian   │                                                  │
-│  │  Connector  │                                                  │
-│  └─────────────┘                                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
+│  │  Obsidian   │  │  PostgreSQL │  │    Docker   │               │
+│  │  Connector  │  │  Connector  │  │  Connector  │               │
+│  └─────────────┘  └─────────────┘  └─────────────┘               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,6 +63,8 @@ Prevents redundant expensive operations.
 - **GitHub API**: Cache by URL + etag
 - **SSH commands**: Cache by (host, command, cwd) for short TTL (10s)
 - **Obsidian index**: Rebuild on vault file changes only
+- **PostgreSQL schema**: Cache for 5 minutes (schema doesn't change often)
+- **Docker containers**: Cache for 10 seconds (containers are dynamic)
 
 ### 4. Configuration Manager
 
@@ -93,6 +95,17 @@ Loads and validates user configuration.
     obsidian:
       vault: ~/Documents/Obsidian
       exclude: [".git", "attachments"]
+    
+    postgresql:
+      - name: local-dev
+        connection_string: ${DATABASE_URL}
+        schemas: ["public"]
+        include_query_history: true
+    
+    docker:
+      socket: unix:///var/run/docker.sock
+      include_stopped: false
+      max_log_lines: 500
   ```
 
 ### 5. Connectors
@@ -135,6 +148,35 @@ Loads and validates user configuration.
 - **Index:** In-memory inverted index rebuilt on file changes
 - **Vault parsing:** Respects Obsidian's `.obsidian/app.json` exclusions
 
+#### PostgreSQL Connector
+- **Library:** `psycopg` (async support via `psycopg[binary]`)
+- **Capabilities:**
+  - `pg.list_tables(schema)` — list tables in a schema
+  - `pg.get_schema(table)` — column names, types, defaults, constraints
+  - `pg.get_indexes(table)` — index names and definitions
+  - `pg.get_foreign_keys(table)` — FK relationships
+  - `pg.get_recent_queries(n)` — last n queries from `pg_stat_statements` (if enabled)
+  - `pg.run_query(sql)` — execute read-only SELECT queries
+- **Safety:** 
+  - Read-only by default (no INSERT/UPDATE/DELETE allowed)
+  - Connection string with minimal privileges recommended
+  - Query timeout (30s default) to prevent runaway queries
+- **Performance:** Schema cached for 5 minutes; queries cached by exact SQL for 30s
+
+#### Docker Connector
+- **Library:** `docker` (official Python SDK)
+- **Capabilities:**
+  - `docker.list_containers(all=False)` — running (or all) containers
+  - `docker.get_logs(container, tail=100)` — recent logs from a container
+  - `docker.inspect(container)` — image, ports, env vars, mounts, health
+  - `docker.list_services()` — Docker Compose services (if using compose)
+  - `docker.get_stats(container)` — CPU, memory, network usage
+- **Access:** Reads from local Docker socket (`/var/run/docker.sock`)
+- **Security:** 
+  - No exec into containers (read-only)
+  - Log truncation to prevent huge context dumps
+  - Socket path configurable for remote Docker contexts
+
 ## Data Flow
 
 ### Tool Call Flow
@@ -174,6 +216,8 @@ Loads and validates user configuration.
 | CLI | `typer` | Fast CLI building |
 | Testing | `pytest` + `pytest-asyncio` | Standard |
 | Linting | `ruff` | Fast |
+| PostgreSQL | `psycopg` | Async-capable, modern |
+| Docker | `docker` (official SDK) | Full API coverage |
 
 ## Project Structure
 
@@ -192,7 +236,9 @@ context-bridge/
 │       │   ├── filesystem.py
 │       │   ├── github.py
 │       │   ├── ssh.py
-│       │   └── obsidian.py
+│       │   ├── obsidian.py
+│       │   ├── postgresql.py
+│       │   └── docker.py
 │       └── cli.py             # Typer CLI
 ├── tests/
 │   ├── test_connectors/
@@ -226,7 +272,7 @@ context-bridge/
 
 1. **Vector Search**: Integrate with `sentence-transformers` + `faiss` for semantic retrieval
 2. **Write Operations**: Allow LLM to create GitHub issues, edit files (with approval)
-3. **Database Connector**: PostgreSQL, SQLite schema introspection
+3. **SQLite Connector**: Lightweight database introspection without PostgreSQL overhead
 4. **Browser Connector**: Read open browser tabs (via extension or CDP)
-5. **Docker Connector**: Inspect running containers, read logs
+5. **Kubernetes Connector**: Read pod logs, inspect deployments and services
 
